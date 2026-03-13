@@ -1,10 +1,3 @@
-/**
- * MasterPasswordScreen — zadání Master Password pro dešifrování .arc kontejneru.
- *
- * Přijímá: route.params.arcUri, route.params.fileName
- * Po úspěšném dešifrování přidá kapsle do store a naviguje na CapsuleList.
- */
-
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -15,6 +8,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useSettingsStore } from '../store/settingsStore';
 import { useCapsuleStore } from '../store/capsuleStore';
+import { useTranslation } from '../i18n';
 import { decryptArcFile } from '../services/importer';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -29,6 +23,7 @@ export default function MasterPasswordScreen() {
   const theme = useSettingsStore((s) => s.theme);
   const dark = theme === 'dark';
   const addCapsule = useCapsuleStore((s) => s.addCapsule);
+  const { t } = useTranslation();
 
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -38,29 +33,25 @@ export default function MasterPasswordScreen() {
   const accent = dark ? '#a78bfa' : '#7c3aed';
 
   const handleOpen = async () => {
-    if (!password.trim()) {
-      setError('Zadejte heslo');
-      return;
-    }
+    if (!password.trim()) { setError(t('error_empty_password')); return; }
     setLoading(true);
     setError('');
     try {
       const result = await decryptArcFile(arcUri, password.trim());
       if (!result.success || !result.capsules) {
-        if (result.error === 'no_capsules') {
-          setError('.arc soubor neobsahuje žádné kapsle');
-        } else {
-          setError('Nesprávné heslo nebo poškozený soubor');
-        }
+        setError(
+          result.error === 'no_capsules'
+            ? t('import_error_no_capsules')
+            : t('import_error_invalid')
+        );
         return;
       }
-      for (const c of result.capsules) {
-        addCapsule(c);
-      }
-      const containerName = fileName.replace(/\.arc$/i, '');
-      navigation.replace('CapsuleList', { containerName });
+      for (const c of result.capsules) addCapsule(c);
+      navigation.replace('CapsuleList', {
+        containerName: fileName.replace(/\.arc$/i, ''),
+      });
     } catch {
-      setError('Neznámá chyba');
+      setError(t('error_unknown'));
     } finally {
       setLoading(false);
     }
@@ -73,7 +64,7 @@ export default function MasterPasswordScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={{ color: accent, fontSize: 15 }}>← Zpět</Text>
+          <Text style={{ color: accent, fontSize: 15 }}>{t('btn_back')}</Text>
         </TouchableOpacity>
 
         <View style={styles.content}>
@@ -85,7 +76,7 @@ export default function MasterPasswordScreen() {
             {fileName}
           </Text>
           <Text style={[styles.hint, { color: dark ? '#666' : '#aaa' }]}>
-            Heslo k .arc kontejneru (nastavil odesílatel)
+            {t('master_hint')}
           </Text>
 
           <View style={styles.inputRow}>
@@ -95,7 +86,7 @@ export default function MasterPasswordScreen() {
                 borderColor: error ? '#ff4a4a' : (dark ? '#2e2e4a' : '#dde2f0'),
                 backgroundColor: dark ? '#16162a' : '#fff',
               }]}
-              placeholder="Master heslo"
+              placeholder={t('master_placeholder')}
               placeholderTextColor={dark ? '#555' : '#bbb'}
               secureTextEntry={!showPwd}
               value={password}
@@ -118,13 +109,13 @@ export default function MasterPasswordScreen() {
           >
             {loading
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnText}>Otevřít kontejner</Text>
+              : <Text style={styles.btnText}>{t('master_open_btn')}</Text>
             }
           </TouchableOpacity>
 
           {loading && (
             <Text style={[styles.loadingHint, { color: dark ? '#555' : '#bbb' }]}>
-              Dešifrování kontejneru… (může trvat pár sekund)
+              {t('master_decrypting')}
             </Text>
           )}
         </View>

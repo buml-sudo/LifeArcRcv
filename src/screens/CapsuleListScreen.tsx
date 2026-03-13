@@ -1,11 +1,3 @@
-/**
- * CapsuleListScreen — seznam importovaných kapslí.
- *
- * Každá karta: ikona 🔒/🔓, název, stav, datum, progress bar, countdown.
- * Tap odemčená → CapsuleScreen. Tap zamčená → Alert s datem.
- * Long press → smazat. Footer → import dalšího .arc.
- */
-
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -16,83 +8,94 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useSettingsStore } from '../store/settingsStore';
 import { useCapsuleStore } from '../store/capsuleStore';
+import { useTranslation } from '../i18n';
 import { ReceivedCapsule } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type NavProp = StackNavigationProp<RootStackParamList, 'CapsuleList'>;
 type RouteParam = RouteProp<RootStackParamList, 'CapsuleList'>;
 
-function formatCountdown(unlockDateIso: string): { text: string; unlocked: boolean } {
+function formatCountdown(
+  unlockDateIso: string,
+  labels: { unlocked: string }
+): { text: string; unlocked: boolean } {
   const diffMs = new Date(unlockDateIso).getTime() - Date.now();
-  if (diffMs <= 0) return { text: 'Odemčeno', unlocked: true };
-  const days = Math.floor(diffMs / 86400000);
+  if (diffMs <= 0) return { text: labels.unlocked, unlocked: true };
+  const days  = Math.floor(diffMs / 86400000);
   const hours = Math.floor((diffMs % 86400000) / 3600000);
-  const mins = Math.floor((diffMs % 3600000) / 60000);
-  if (days > 0) return { text: `Za ${days} d ${hours} h`, unlocked: false };
-  if (hours > 0) return { text: `Za ${hours} h ${mins} min`, unlocked: false };
-  return { text: `Za ${mins} min`, unlocked: false };
+  const mins  = Math.floor((diffMs % 3600000) / 60000);
+  if (days > 0)  return { text: `${days}d ${hours}h`, unlocked: false };
+  if (hours > 0) return { text: `${hours}h ${mins}m`, unlocked: false };
+  return { text: `${mins}m`, unlocked: false };
 }
 
 function getProgress(rc: ReceivedCapsule): number {
   const start = new Date(rc.capsule.created_at ?? rc.importedAt).getTime();
-  const end = new Date(rc.capsule.unlock_date).getTime();
-  const now = Date.now();
+  const end   = new Date(rc.capsule.unlock_date).getTime();
+  const now   = Date.now();
   if (end <= start) return 1;
   return Math.min(Math.max((now - start) / (end - start), 0), 1);
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   try {
-    return new Date(iso).toLocaleDateString('cs-CZ', {
+    return new Date(iso).toLocaleDateString(locale, {
       day: 'numeric', month: 'short', year: 'numeric',
     });
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
 export default function CapsuleListScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RouteParam>();
-  const containerName = route.params?.containerName ?? 'Kapsle';
+  const containerName = route.params?.containerName ?? '';
 
-  const theme = useSettingsStore((s) => s.theme);
+  const { theme } = useSettingsStore();
+  const { t, language } = useTranslation();
   const dark = theme === 'dark';
   const { capsules, removeCapsule } = useCapsuleStore();
 
-  const accent = dark ? '#a78bfa' : '#7c3aed';
-  const iconBg = dark ? '#1e1a30' : '#f0eeff';
+  const accent  = dark ? '#a78bfa' : '#7c3aed';
+  const iconBg  = dark ? '#1e1a30' : '#f0eeff';
+  const locale  = language === 'cs' ? 'cs-CZ' : 'en-GB';
 
   // Tick každou minutu pro refresh countdown
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 60000);
+    const id = setInterval(() => setTick((n) => n + 1), 60000);
     return () => clearInterval(id);
   }, []);
 
   const handleTap = (rc: ReceivedCapsule) => {
-    const { unlocked } = formatCountdown(rc.capsule.unlock_date);
+    const { unlocked } = formatCountdown(rc.capsule.unlock_date, { unlocked: '' });
     if (unlocked) {
       navigation.navigate('Capsule', { capsuleId: rc.id });
     } else {
-      Alert.alert('Zamčeno', `Tato kapsle se odemkne\n${formatDate(rc.capsule.unlock_date)}.`);
+      Alert.alert(
+        t('capsule_locked'),
+        `${t('capsule_locked_alert')}\n${formatDate(rc.capsule.unlock_date, locale)}.`,
+        [{ text: t('button_close') }]
+      );
     }
   };
 
   const handleLongPress = (rc: ReceivedCapsule) => {
     Alert.alert(
-      'Smazat kapsli?',
-      `„${rc.capsule.title}" bude trvale odstraněna.`,
+      t('capsule_delete_title'),
+      `„${rc.capsule.title}" ${t('capsule_delete_body')}`,
       [
-        { text: 'Zrušit', style: 'cancel' },
-        { text: 'Smazat', style: 'destructive', onPress: () => removeCapsule(rc.id) },
+        { text: t('button_cancel'), style: 'cancel' },
+        { text: t('button_delete'), style: 'destructive', onPress: () => removeCapsule(rc.id) },
       ]
     );
   };
 
   const renderItem: ListRenderItem<ReceivedCapsule> = ({ item }) => {
-    const { text: countdownText, unlocked } = formatCountdown(item.capsule.unlock_date);
-    const progress = getProgress(item);
+    const { text: countdownText, unlocked } = formatCountdown(
+      item.capsule.unlock_date,
+      { unlocked: t('capsule_unlocked_label') }
+    );
+    const progress    = getProgress(item);
     const statusColor = unlocked ? '#4ade80' : accent;
 
     return (
@@ -117,13 +120,15 @@ export default function CapsuleListScreen() {
               {item.capsule.title}
             </Text>
             <Text style={[styles.cardStatus, { color: statusColor }]}>
-              {unlocked ? 'Odemčeno — zadej heslo' : 'Zamčeno'}
+              {unlocked ? t('capsule_unlocked') : t('capsule_locked')}
             </Text>
             <Text style={[styles.cardMeta, { color: dark ? '#555' : '#bbb' }]}>
-              Otevře se: {formatDate(item.capsule.unlock_date)}
+              {t('capsule_opens_at_colon')} {formatDate(item.capsule.unlock_date, locale)}
             </Text>
           </View>
-          <Text style={[styles.countdown, { color: unlocked ? '#4ade80' : (dark ? '#888' : '#999') }]}>
+          <Text style={[styles.countdown, {
+            color: unlocked ? '#4ade80' : (dark ? '#888' : '#999'),
+          }]}>
             {countdownText}
           </Text>
         </View>
@@ -142,16 +147,18 @@ export default function CapsuleListScreen() {
   };
 
   const count = capsules.length;
+  const countLabel = count === 1 ? t('home_capsules_one') : t('home_capsules_many');
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: dark ? '#0d0d14' : '#f2f4f8' }]}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>LIFEARC RCV</Text>
-          <Text style={[styles.title, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>{containerName}</Text>
+          <Text style={[styles.title, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
+            {containerName || t('home_title')}
+          </Text>
           <Text style={[styles.sub, { color: dark ? '#888' : '#999' }]}>
-            {count} {count === 1 ? 'kapsle' : 'kapslí'}
+            {count} {countLabel}
           </Text>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
@@ -167,7 +174,7 @@ export default function CapsuleListScreen() {
         contentContainerStyle={count === 0 ? styles.emptyContainer : styles.listContent}
         ListEmptyComponent={
           <Text style={[styles.emptyText, { color: dark ? '#555' : '#bbb' }]}>
-            Tento kontejner neobsahuje žádné kapsle.
+            {t('home_empty_container')}
           </Text>
         }
         ListFooterComponent={
@@ -177,7 +184,7 @@ export default function CapsuleListScreen() {
               onPress={() => navigation.navigate('Welcome')}
             >
               <Text style={[styles.importMoreText, { color: accent }]}>
-                + Importovat další .arc
+                {t('home_import_more')}
               </Text>
             </TouchableOpacity>
           ) : (
@@ -185,7 +192,7 @@ export default function CapsuleListScreen() {
               style={[styles.btn, { backgroundColor: accent, margin: 16 }]}
               onPress={() => navigation.navigate('Welcome')}
             >
-              <Text style={styles.btnText}>Importovat .arc soubor</Text>
+              <Text style={styles.btnText}>{t('button_import')}</Text>
             </TouchableOpacity>
           )
         }

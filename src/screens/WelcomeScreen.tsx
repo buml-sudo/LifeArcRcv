@@ -1,10 +1,3 @@
-/**
- * WelcomeScreen — úvodní obrazovka.
- *
- * Pokud existují uložené kapsle → zobrazí tlačítko "Zobrazit kapsle".
- * Vždy zobrazí "Otevřít .arc soubor" → DocumentPicker → MasterPasswordScreen.
- */
-
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
@@ -14,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useSettingsStore } from '../store/settingsStore';
 import { useCapsuleStore } from '../store/capsuleStore';
+import { useTranslation } from '../i18n';
 import { pickArcFile } from '../services/importer';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -24,10 +18,11 @@ export default function WelcomeScreen() {
   const theme = useSettingsStore((s) => s.theme);
   const dark = theme === 'dark';
   const capsules = useCapsuleStore((s) => s.capsules);
+  const { t } = useTranslation();
   const [picking, setPicking] = useState(false);
 
   const accent = dark ? '#a78bfa' : '#7c3aed';
-  const iconBg = dark ? '#1e1a30' : '#f0eeff';
+  const iconBg  = dark ? '#1e1a30' : '#f0eeff';
 
   const handleOpenArc = async () => {
     setPicking(true);
@@ -51,13 +46,13 @@ export default function WelcomeScreen() {
         </View>
 
         <Text style={[styles.title, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
-          LifeArc Receiver
+          {t('app_name')}
         </Text>
         <Text style={[styles.sub, { color: dark ? '#888' : '#999' }]}>
-          Přijímač časových kapslí
+          {t('app_subtitle')}
         </Text>
         <Text style={[styles.desc, { color: dark ? '#666' : '#aaa' }]}>
-          Obdrželi jste .arc soubor?{'\n'}Otevřete ho zde.
+          {t('welcome_desc')}
         </Text>
 
         <TouchableOpacity
@@ -67,7 +62,7 @@ export default function WelcomeScreen() {
         >
           {picking
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Otevřít .arc soubor</Text>
+            : <Text style={styles.btnText}>{t('welcome_open_arc')}</Text>
           }
         </TouchableOpacity>
 
@@ -75,11 +70,11 @@ export default function WelcomeScreen() {
           <TouchableOpacity
             style={[styles.btnGhost, { borderColor: accent }]}
             onPress={() =>
-              navigation.navigate('CapsuleList', { containerName: 'Uložené kapsle' })
+              navigation.navigate('CapsuleList', { containerName: t('home_title') })
             }
           >
             <Text style={[styles.btnGhostText, { color: accent }]}>
-              Zobrazit uložené kapsle ({capsules.length})
+              {t('welcome_show_capsules')} ({capsules.length})
             </Text>
           </TouchableOpacity>
         )}
@@ -88,7 +83,9 @@ export default function WelcomeScreen() {
           style={styles.settingsLink}
           onPress={() => navigation.navigate('Settings')}
         >
-          <Text style={[styles.settingsText, { color: dark ? '#555' : '#bbb' }]}>Nastavení</Text>
+          <Text style={[styles.settingsText, { color: dark ? '#555' : '#bbb' }]}>
+            {t('settings_title')}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
