@@ -1,0 +1,43 @@
+{
+  "app_name": "LifeArc Receiver",
+  "app_subtitle": "Přijímač časových kapslí",
+
+  "button_save": "Uložit",
+  "button_cancel": "Zrušit",
+  "button_delete": "Smazat",
+  "button_close": "Zavřít",
+  "button_open": "Otevřít",
+  "button_import": "Importovat .arc",
+  "button_try_open": "Pokusit se otevřít",
+
+  "home_title": "Časové kapsle",
+  "home_empty": "Žádné kapsle. Importuj .arc soubor.",
+  "home_import_btn": "+ Importovat kapsli (.arc)",
+
+  "capsule_locked": "Zamčeno",
+  "capsule_unlocked": "Odemčeno — zadej heslo",
+  "capsule_ready": "Čas OK — zadej master heslo",
+  "capsule_not_yet": "Ještě není správný čas",
+  "capsule_not_yet_offline": "Ještě není čas (offline odhad)",
+  "capsule_opens_at": "Otevře se",
+  "capsule_created_at": "Importováno",
+  "capsule_decrypting": "Dešifrování…",
+  "capsule_wrong_password": "Nesprávné heslo nebo poškozená kapsle",
+  "capsule_offline_expired": "Offline příliš dlouho — potřebuji internet",
+  "capsule_no_verification": "Nikdy neproběhlo online ověření — potřebuji internet",
+  "capsule_clock_back": "Systémové hodiny šly pozpátku — podezřelé!",
+  "capsule_delete_confirm": "Smazat tuto kapsli?",
+  "capsule_password_placeholder": "Master heslo",
+
+  "import_error_invalid": "Neplatný nebo poškozený .arc soubor",
+  "import_error_no_capsules": ".arc soubor neobsahuje žádné kapsle",
+  "import_success": "Kapsle importovány",
+
+  "settings_title": "Nastavení",
+  "settings_language": "Jazyk",
+  "settings_theme": "Motiv",
+  "settings_theme_dark": "Tmavý",
+  "settings_theme_light": "Světlý",
+
+  "error_unknown": "Neznámá chyba"
+}

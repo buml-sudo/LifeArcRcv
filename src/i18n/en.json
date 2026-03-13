@@ -1,0 +1,43 @@
+{
+  "app_name": "LifeArc Receiver",
+  "app_subtitle": "Time Capsule Receiver",
+
+  "button_save": "Save",
+  "button_cancel": "Cancel",
+  "button_delete": "Delete",
+  "button_close": "Close",
+  "button_open": "Open",
+  "button_import": "Import .arc",
+  "button_try_open": "Try to open",
+
+  "home_title": "Time Capsules",
+  "home_empty": "No capsules. Import an .arc file.",
+  "home_import_btn": "+ Import capsule (.arc)",
+
+  "capsule_locked": "Locked",
+  "capsule_unlocked": "Unlocked — enter password",
+  "capsule_ready": "Time OK — enter master password",
+  "capsule_not_yet": "Not yet time",
+  "capsule_not_yet_offline": "Not yet time (offline estimate)",
+  "capsule_opens_at": "Opens at",
+  "capsule_created_at": "Imported",
+  "capsule_decrypting": "Decrypting…",
+  "capsule_wrong_password": "Wrong password or corrupted capsule",
+  "capsule_offline_expired": "Too long offline — need internet",
+  "capsule_no_verification": "No online verification yet — need internet",
+  "capsule_clock_back": "System clock went backward — suspicious!",
+  "capsule_delete_confirm": "Delete this capsule?",
+  "capsule_password_placeholder": "Master password",
+
+  "import_error_invalid": "Invalid or corrupted .arc file",
+  "import_error_no_capsules": ".arc file contains no capsules",
+  "import_success": "Capsules imported",
+
+  "settings_title": "Settings",
+  "settings_language": "Language",
+  "settings_theme": "Theme",
+  "settings_theme_dark": "Dark",
+  "settings_theme_light": "Light",
+
+  "error_unknown": "Unknown error"
+}

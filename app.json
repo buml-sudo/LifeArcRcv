@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "LifeArc Receiver",
+    "slug": "LifeArcRcv",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d0d14"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1e1a30",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.LifeArcRcv"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
