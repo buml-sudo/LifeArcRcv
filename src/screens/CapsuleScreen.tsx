@@ -1,78 +1,363 @@
 /**
- * CapsuleScreen — detail kapsle: odpočítávání, zadání Capsule Password, zobrazení obsahu.
+ * CapsuleScreen — detail kapsle: time check → Capsule Password → obsah.
  *
- * Přijímá: route.params.capsuleId (string)
+ * Přijímá: route.params.capsuleId
  *
- * TODO (Claude Code):
- *  1. Načíst kapsli z capsuleStore podle capsuleId
- *  2. Online time check: isUnlockTimeReached(capsule.unlock_date, capsule.offline_tolerance)
- *     Zobrazit stavy:
- *       - Načítání: spinner + "Ověřuji čas…"
- *       - Zamčeno (not_yet): countdown, datum odemčení, progress bar
- *       - Zamčeno (offline_expired): "Offline příliš dlouho — potřebuji internet"
- *       - Zamčeno (no_verification): "Nikdy neproběhlo online ověření"
- *       - Zamčeno (clock_went_back): "Hodiny šly pozpátku — podezřelé!"
- *       - Odemčeno: input pro Capsule Password + tlačítko "Otevřít kapsuli"
- *
- *  3. Zadání Capsule Password + dešifrování:
- *     a) ActivityIndicator overlay "Dešifrování…" (busyOverlay stejný styl jako TimeCapsule v LifeArc)
- *     b) base64ToUint8Array(capsule.encrypted_content)
- *     c) decrypt(bytes, capsulePassword) → plaintext JSON
- *     d) JSON.parse(plaintext) → { title, content, type, ... }
- *     e) Zobrazit obsah
- *     f) Při chybě (wrong password): "Nesprávné heslo"
- *
- *  4. Obsah kapsle:
- *     - Text: Text komponenta s celým textem
- *     - Foto: ScrollView s Image (nebo placeholder "foto v plné verzi LifeArc")
- *     - Audio: TODO placeholder
- *
- *  5. Tlačítko Zpět v headeru
- *  6. Long press na kapsli v zamčeném stavu → možnost smazat
- *
- * POZNÁMKA: Capsule Password je JINÉ heslo než Master Password.
- * Master Password = heslo k .arc kontejneru (celý vault)
- * Capsule Password = heslo k obsahu jednotlivé kapsle (nastavil odesílatel v LifeArc)
- *
- * Šifrování kapsle: identické s .arc — AES-256-GCM, PBKDF2 100k, viz encryption.ts
- * encrypted_content je base64 string uložený v TimeCapsule.encrypted_content
- *
- * Helper:
- *   function base64ToUint8Array(b64: string): Uint8Array {
- *     const bin = atob(b64);
- *     const bytes = new Uint8Array(bin.length);
- *     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
- *     return bytes;
- *   }
- *
- * Design: LifeArc_DesignSystem.md — modul Kapsle (#a78bfa dark / #7c3aed light)
- * Inspirace: LifeArc/src/screens/TimeCapsuleScreen.tsx (decrypt flow, busyOverlay)
+ * Stavy:
+ *  1. checkLoading  — spinner "Ověřuji čas…"
+ *  2. not_yet       — countdown + datum odemčení
+ *  3. blocked       — offline_expired / no_verification / clock_went_back
+ *  4. allowed       — input Capsule Password + tlačítko "Otevřít"
+ *  5. content       — zobrazení obsahu kapsle
  */
 
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  ActivityIndicator, ScrollView, Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { useSettingsStore } from '../store/settingsStore';
+import { useCapsuleStore } from '../store/capsuleStore';
+import { isUnlockTimeReached, TimeCheckResult } from '../services/timecheck';
+import { decrypt } from '../services/encryption';
+import { RootStackParamList } from '../navigation/AppNavigator';
+
+type NavProp = StackNavigationProp<RootStackParamList, 'Capsule'>;
+type RouteParam = RouteProp<RootStackParamList, 'Capsule'>;
+
+function base64ToUint8Array(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('cs-CZ', {
+      day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+}
+
+function formatCountdown(unlockDateIso: string): string {
+  const diffMs = new Date(unlockDateIso).getTime() - Date.now();
+  if (diffMs <= 0) return 'Odemčeno';
+  const days = Math.floor(diffMs / 86400000);
+  const hours = Math.floor((diffMs % 86400000) / 3600000);
+  const mins = Math.floor((diffMs % 3600000) / 60000);
+  if (days > 0) return `Za ${days} dní ${hours} hodin`;
+  if (hours > 0) return `Za ${hours} h ${mins} min`;
+  return `Za ${mins} minut`;
+}
+
+interface CapsuleContent {
+  text?: string;
+  photos?: string[];
+  audio?: string;
+  [key: string]: unknown;
+}
 
 export default function CapsuleScreen() {
+  const navigation = useNavigation<NavProp>();
+  const route = useRoute<RouteParam>();
+  const { capsuleId } = route.params;
+
   const theme = useSettingsStore((s) => s.theme);
   const dark = theme === 'dark';
+  const { capsules, removeCapsule } = useCapsuleStore();
 
+  const rc = capsules.find((c) => c.id === capsuleId);
+  const accent = dark ? '#a78bfa' : '#7c3aed';
+
+  const [timeCheck, setTimeCheck] = useState<TimeCheckResult | null>(null);
+  const [checkLoading, setCheckLoading] = useState(true);
+  const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [decrypting, setDecrypting] = useState(false);
+  const [decryptError, setDecryptError] = useState('');
+  const [content, setContent] = useState<CapsuleContent | null>(null);
+
+  useEffect(() => {
+    if (!rc) return;
+    setCheckLoading(true);
+    isUnlockTimeReached(rc.capsule.unlock_date, rc.capsule.offline_tolerance)
+      .then((result) => setTimeCheck(result))
+      .finally(() => setCheckLoading(false));
+  }, [rc?.capsule.unlock_date]);
+
+  const handleDelete = () => {
+    if (!rc) return;
+    Alert.alert(
+      'Smazat kapsli?',
+      `„${rc.capsule.title}" bude trvale odstraněna.`,
+      [
+        { text: 'Zrušit', style: 'cancel' },
+        {
+          text: 'Smazat', style: 'destructive', onPress: () => {
+            removeCapsule(rc.id);
+            navigation.goBack();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDecrypt = async () => {
+    if (!rc) return;
+    if (!password.trim()) { setDecryptError('Zadejte heslo'); return; }
+    if (!rc.capsule.encrypted_content) {
+      setDecryptError('Kapsle nemá zašifrovaný obsah');
+      return;
+    }
+    setDecrypting(true);
+    setDecryptError('');
+    try {
+      const bytes = base64ToUint8Array(rc.capsule.encrypted_content);
+      const plaintext = await decrypt(bytes, password.trim());
+      setContent(JSON.parse(plaintext) as CapsuleContent);
+    } catch {
+      setDecryptError('Nesprávné heslo nebo poškozená kapsle');
+    } finally {
+      setDecrypting(false);
+    }
+  };
+
+  const bg = dark ? '#0d0d14' : '#f2f4f8';
+  const surface = dark ? '#16162a' : '#fff';
+
+  // ── Kapsle nenalezena ────────────────────────────────────────────────────────
+  if (!rc) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={{ color: accent, fontSize: 15 }}>← Zpět</Text>
+        </TouchableOpacity>
+        <View style={styles.center}>
+          <Text style={{ color: dark ? '#888' : '#999', fontSize: 14 }}>Kapsle nenalezena.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const capsule = rc.capsule;
+
+  // ── Obsah dešifrován ─────────────────────────────────────────────────────────
+  if (content) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={{ color: accent, fontSize: 15 }}>← Zpět</Text>
+        </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.pad}>
+          <View style={[styles.card, { backgroundColor: surface, borderLeftColor: '#4ade80' }]}>
+            <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>OBSAH KAPSLE</Text>
+            <Text style={[styles.capsuleTitle, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
+              {capsule.title}
+            </Text>
+            <Text style={{ color: '#4ade80', fontSize: 11, marginBottom: 16 }}>
+              Odemčeno {formatDateTime(capsule.unlock_date)}
+            </Text>
+
+            {content.text ? (
+              <Text style={[styles.contentText, { color: dark ? '#d0d0e8' : '#2a2a3a' }]}>
+                {content.text}
+              </Text>
+            ) : null}
+
+            {content.photos && content.photos.length > 0 ? (
+              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
+                📷 {content.photos.length} foto — k zobrazení použij LifeArc
+              </Text>
+            ) : null}
+
+            {content.audio ? (
+              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
+                🎵 Audio — k přehrání použij LifeArc
+              </Text>
+            ) : null}
+
+            {!content.text && !content.photos?.length && !content.audio ? (
+              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
+                (Kapsle neobsahuje textový obsah)
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity style={styles.deleteLink} onPress={handleDelete}>
+            <Text style={{ color: '#ff4a4a', fontSize: 13 }}>Smazat kapsli</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Hlavní view (time check + heslo) ─────────────────────────────────────────
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: dark ? '#0d0d14' : '#f2f4f8' }]}>
-      <View style={styles.header}>
-        <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>LIFEARC RCV</Text>
-        <Text style={[styles.title, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>Detail kapsle</Text>
-        <Text style={[styles.sub, { color: dark ? '#888' : '#999' }]}>TODO: implementovat</Text>
-      </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <Text style={{ color: accent, fontSize: 15 }}>← Zpět</Text>
+      </TouchableOpacity>
+
+      <ScrollView contentContainerStyle={styles.pad}>
+        {/* Hlavička kapsle */}
+        <View style={[styles.card, { backgroundColor: surface, borderLeftColor: accent }]}>
+          <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>LIFEARC RCV</Text>
+          <Text style={[styles.capsuleTitle, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
+            {capsule.title}
+          </Text>
+          <Text style={{ color: dark ? '#888' : '#999', fontSize: 11 }}>
+            Otevře se: {formatDateTime(capsule.unlock_date)}
+          </Text>
+        </View>
+
+        {/* Time check */}
+        {checkLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={accent} />
+            <Text style={[styles.statusText, { color: dark ? '#888' : '#999' }]}>
+              Ověřuji čas…
+            </Text>
+          </View>
+
+        ) : timeCheck?.allowed ? (
+          // ── Odemčeno ──────────────────────────────────────────────────────────
+          <View style={[styles.card, { backgroundColor: surface }]}>
+            <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>🔓</Text>
+            <Text style={[styles.unlockTitle, { color: '#4ade80' }]}>Čas nastal!</Text>
+            <Text style={[styles.statusText, { color: dark ? '#888' : '#999', textAlign: 'center', marginBottom: 20 }]}>
+              Zadej heslo ke kapsli
+            </Text>
+
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, {
+                  color: dark ? '#f0f0f0' : '#1a1a2e',
+                  borderColor: decryptError ? '#ff4a4a' : (dark ? '#2e2e4a' : '#dde2f0'),
+                  backgroundColor: dark ? '#0d0d14' : '#f2f4f8',
+                }]}
+                placeholder="Heslo ke kapsli"
+                placeholderTextColor={dark ? '#555' : '#bbb'}
+                secureTextEntry={!showPwd}
+                value={password}
+                onChangeText={(v) => { setPassword(v); setDecryptError(''); }}
+                onSubmitEditing={handleDecrypt}
+                returnKeyType="go"
+              />
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
+                <Text style={{ fontSize: 20 }}>{showPwd ? '🙈' : '👁️'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {decryptError ? (
+              <Text style={styles.errorText}>{decryptError}</Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: accent, opacity: decrypting ? 0.7 : 1 }]}
+              onPress={handleDecrypt}
+              disabled={decrypting}
+            >
+              {decrypting ? (
+                <View style={styles.btnRow}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={[styles.btnText, { marginLeft: 8 }]}>Dešifrování…</Text>
+                </View>
+              ) : (
+                <Text style={styles.btnText}>Otevřít kapsuli</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+        ) : (
+          // ── Zamčeno ────────────────────────────────────────────────────────────
+          <View style={[styles.card, { backgroundColor: surface, alignItems: 'center' }]}>
+            <Text style={{ fontSize: 48, marginBottom: 12 }}>🔒</Text>
+
+            {timeCheck?.blockedReason === 'not_yet' && (
+              <>
+                <Text style={[styles.lockedLabel, { color: dark ? '#c0b0f0' : '#7c3aed' }]}>
+                  Ještě není čas
+                </Text>
+                <Text style={[styles.lockedCountdown, { color: dark ? '#888' : '#999' }]}>
+                  {formatCountdown(capsule.unlock_date)}
+                </Text>
+                <Text style={[styles.lockedDate, { color: dark ? '#555' : '#bbb' }]}>
+                  Odemkne se: {formatDateTime(capsule.unlock_date)}
+                </Text>
+              </>
+            )}
+
+            {timeCheck?.blockedReason === 'offline_expired' && (
+              <Text style={[styles.lockedLabel, { color: dark ? '#fbbf24' : '#d97706' }]}>
+                {'Offline příliš dlouho.\nPotřebuji připojení k internetu.'}
+              </Text>
+            )}
+
+            {timeCheck?.blockedReason === 'no_verification' && (
+              <Text style={[styles.lockedLabel, { color: dark ? '#fbbf24' : '#d97706' }]}>
+                {'Nikdy neproběhlo online ověření.\nPotřebuji připojení k internetu.'}
+              </Text>
+            )}
+
+            {timeCheck?.blockedReason === 'clock_went_back' && (
+              <Text style={[styles.lockedLabel, { color: '#ff4a4a' }]}>
+                {'Systémové hodiny šly pozpátku.\nPodezřelá manipulace — nelze ověřit čas.'}
+              </Text>
+            )}
+
+            {timeCheck?.offlineFallback && (
+              <Text style={[styles.offlineBadge, { color: dark ? '#888' : '#999' }]}>
+                Offline odhad · {timeCheck.offlineDriftHours?.toFixed(1)} h od posledního ověření
+              </Text>
+            )}
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.deleteLink} onPress={handleDelete}>
+          <Text style={{ color: '#ff4a4a', fontSize: 13 }}>Smazat kapsli</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { padding: 16, paddingBottom: 8 },
-  label: { fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
-  title: { fontSize: 17, fontWeight: '500', marginBottom: 2 },
-  sub: { fontSize: 11 },
+  backBtn: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
+  center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
+  pad: { padding: 16, paddingBottom: 40 },
+  label: { fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
+  card: {
+    borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 2.5,
+    shadowColor: '#0d0d14', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
+  },
+  capsuleTitle: { fontSize: 17, fontWeight: '600', marginBottom: 4 },
+  statusText: { fontSize: 13, marginTop: 8 },
+  unlockTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
+  lockedLabel: { fontSize: 15, fontWeight: '500', textAlign: 'center', lineHeight: 22, marginBottom: 12 },
+  lockedCountdown: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
+  lockedDate: { fontSize: 12, textAlign: 'center' },
+  offlineBadge: { fontSize: 11, marginTop: 12, textAlign: 'center' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  input: {
+    flex: 1, borderWidth: 1.5, borderRadius: 10,
+    paddingVertical: 12, paddingHorizontal: 14, fontSize: 15,
+  },
+  eyeBtn: { padding: 10, marginLeft: 8 },
+  errorText: { color: '#ff4a4a', fontSize: 13, marginBottom: 10 },
+  btn: {
+    borderRadius: 12, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center', marginTop: 4,
+  },
+  btnRow: { flexDirection: 'row', alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  contentText: { fontSize: 15, lineHeight: 24, marginTop: 4 },
+  placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
+  deleteLink: { alignItems: 'center', padding: 16, marginTop: 8 },
 });
