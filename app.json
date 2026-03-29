@@ -20,7 +20,17 @@
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.LifeArcRcv"
+      "package": "com.anonymous.LifeArcRcv",
+      "intentFilters": [
+        {
+          "action": "android.intent.action.VIEW",
+          "category": ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"],
+          "data": [
+            { "mimeType": "application/octet-stream" },
+            { "mimeType": "*/*", "pathPattern": ".*\\.arc" }
+          ]
+        }
+      ]
     },
     "plugins": [
       "expo-secure-store"
