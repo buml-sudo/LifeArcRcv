@@ -28,23 +28,29 @@ APK_SRC="android/app/build/outputs/apk/release/app-release.apk"
 echo "=== LifeArc Receiver APK Build v${VERSION} ==="
 [ -n "$CHANGELOG" ] && echo "  Changelog: $CHANGELOG"
 
-# 1. Build
+# 1. Expo prebuild (synchronizuje android/ s app.json)
 echo ""
-echo "[1/3] Builduju APK..."
+echo "[1/4] Expo prebuild..."
+npx expo prebuild --platform android --clean --no-install
+echo "✓ android/ aktualizován"
+
+# 2. Build
+echo ""
+echo "[2/4] Builduju APK..."
 cd android && ./gradlew assembleRelease --quiet && cd ..
 echo "✓ APK sestaven: $APK_SRC"
 
-# 2. Deploy na VPS
+# 3. Deploy na VPS
 echo ""
-echo "[2/3] Nahrávám na VPS..."
+echo "[3/4] Nahrávám na VPS..."
 ssh ${VPS_SSH} "mkdir -p ${VPS_BETA}"
 scp "${APK_SRC}" "${VPS_SSH}:${VPS_BETA}/${APK_NAME}"
 ssh ${VPS_SSH} "cp ${VPS_BETA}/${APK_NAME} ${VPS_BETA}/LifeArcRcv-latest.apk"
 echo "✓ Nahráno: https://${VPS_HOST}/beta/${APK_NAME}"
 
-# 3. Aktualizuj versions-rcv.json (VPS + lokálně)
+# 4. Aktualizuj versions-rcv.json (VPS + lokálně)
 echo ""
-echo "[3/3] Aktualizuji versions-rcv.json..."
+echo "[4/4] Aktualizuji versions-rcv.json..."
 TODAY=$(date +%Y-%m-%d)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 URL="https://${VPS_HOST}/beta/${APK_NAME}"
