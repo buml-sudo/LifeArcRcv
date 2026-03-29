@@ -638,3 +638,39 @@ Soubory `encryption.ts` a `timecheck.ts` jsou záměrně **zkopírovány** (ne s
 4. **Žádná síťová komunikace** kromě ověření času (4 veřejné time servery, HEAD/GET requesty)
 5. **Offline manipulace hodin** je detekována: `clock_went_back` blokuje odemčení
 6. **AES-256-GCM auth tag** zaručuje, že špatné heslo je okamžitě detekováno (bez brute-force leakage)
+
+---
+
+## 17. Beta distribuce — QR kód systém (2026-03-15)
+
+Systém automatické aktualizace QR kódů pro beta testery na webu.
+
+**Předávací adresář:** `/home/buml/QRs-html/`
+
+| Soubor | Kdo aktualizuje |
+|---|---|
+| `versions.json` | LifeArc Claude Code agent |
+| `versions-rcv.json` | LifeArcRcv Claude Code agent (tento agent) |
+| `SPEC.md` | Smlouva pro HTML cron |
+
+**Povinnost tohoto agenta:**
+Po každém buildu / logickém celku zapsat do `/home/buml/QRs-html/versions-rcv.json`:
+- `_updated` — aktuální ISO timestamp (VŽDY aktualizovat)
+- `version` — z `app.json`
+- `android_url` — URL APK na VPS (`srv1432682.hstgr.cloud/beta/LifeArcRcv-<verze>.apk`)
+- `changelog` — stručný popis změn
+
+Detailní instrukce: `/home/buml/QRs-html/qr-instruction-rcv.md`
+
+**Workflow:**
+1. Agent zapíše `versions-rcv.json` (pole `_updated` se změní)
+2. HTML cron detekuje změnu → nasadí soubor na VPS
+3. HTML stránka fetchuje JSON → generuje QR kódy (qrcode.js)
+4. Beta tester naskenuje QR → stáhne APK
+
+**Build příkaz (po nastavení EAS):**
+```bash
+. /home/buml/.nvm/nvm.sh
+cd ~/LifeArcRcv && npx eas-cli build --platform android --profile preview
+```
+`eas.json`: `/home/buml/LifeArcRcv/eas.json`

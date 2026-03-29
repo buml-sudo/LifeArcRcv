@@ -36,7 +36,7 @@ deti.arc  (zašifrováno Master Password)
 **Capsule Password** = heslo k obsahu jednotlivé kapsle (jiné heslo, nastavil odesílatel)
 
 ## User Flow (kompletní)
-1. Uživatel obdrží `xxx.arc` (email/Bluetooth/SD)
+1. Uživatel obdrží `xxx.arc` (email/Bluetooth/SD/flash)
 2. WelcomeScreen → tap "Otevřít .arc soubor" → DocumentPicker
 3. MasterPasswordScreen → zadá Master Password → decrypt .arc → VaultData
 4. Extrahují se `VaultData.time_capsules` → uloží do capsuleStore jako ReceivedCapsule[]
@@ -165,11 +165,21 @@ const result = await isUnlockTimeReached(
 - Registrace `.arc` file handleru v app.json pro Android Intent / iOS Document Types
 - `uuid` (pro ReceivedCapsule.id) → přidat do package.json + přidat import v capsuleStore
 
+## Beta distribuce — QR kódy (2026-03-15)
+Po každém buildu / logickém celku aktualizuj `/home/buml/QRs-html/versions-rcv.json`:
+- `_updated` — aktuální ISO timestamp (VŽDY)
+- `version` — z app.json
+- `android_url` — URL APK na VPS (srv1432682.hstgr.cloud/beta/)
+- `changelog` — stručný popis změn
+Detailní instrukce: `/home/buml/QRs-html/qr-instruction-rcv.md`
+
 ## User Preferences
 - Autonomní práce bez potvrzování každého kroku
 - Pushovat na GitHub po každém logickém celku
 - Komunikace stručně, česky
 - Po každém logickém celku commitovat
+- Každou konverzaci loguj do: `/home/buml/.claude/projects/-home-buml-LifeArcRcv/memory/memory-LiveArcRcv.log`
+
 
 ## Vztah k LifeArc
 - `src/services/encryption.ts` — identický s LifeArc, nesdílený, pouze zkopírovaný
