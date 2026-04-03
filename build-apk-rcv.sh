@@ -20,13 +20,21 @@ export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Verze z app.json
-VERSION=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
-APK_NAME="LifeArcRcv-${VERSION}.apk"
 APK_SRC="android/app/build/outputs/apk/release/app-release.apk"
 
-echo "=== LifeArc Receiver APK Build v${VERSION} ==="
+echo "=== LifeArc Receiver APK Build ==="
 [ -n "$CHANGELOG" ] && echo "  Changelog: $CHANGELOG"
+
+# 0. Git pull
+echo ""
+echo "[0/4] Git pull..."
+git pull
+echo "✓ Kód aktuální"
+
+# Verze z app.json (po git pull — může být aktualizovaná)
+VERSION=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")
+APK_NAME="LifeArcRcv-${VERSION}.apk"
+echo "  Verze: ${VERSION}"
 
 # 1. Expo prebuild (synchronizuje android/ s app.json)
 echo ""
