@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, ScrollView, Alert,
+  ActivityIndicator, ScrollView, Alert, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -100,8 +100,12 @@ export default function CapsuleScreen() {
   };
 
   const handleDecrypt = async () => {
-    if (!rc?.capsule.encrypted_content || decryptingRef.current) return;
+    if (decryptingRef.current) return;
     if (!password.trim()) { setDecryptError(t('error_empty_password')); return; }
+    if (!rc?.capsule.encrypted_content) {
+      setDecryptError(t('capsule_no_encrypted'));
+      return;
+    }
 
     decryptingRef.current = true;
     setDecrypting(true);
@@ -194,9 +198,16 @@ export default function CapsuleScreen() {
             ) : null}
 
             {content.photos && content.photos.length > 0 ? (
-              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
-                📷 {content.photos.length} {t('capsule_photo_hint')}
-              </Text>
+              <>
+                {content.photos.map((photo, i) => (
+                  <Image
+                    key={i}
+                    source={{ uri: `data:image/jpeg;base64,${photo}` }}
+                    style={[styles.photo, { backgroundColor: dark ? '#1e1a30' : '#f0eeff' }]}
+                    resizeMode="contain"
+                  />
+                ))}
+              </>
             ) : null}
 
             {content.audio ? (
@@ -339,6 +350,7 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', alignItems: 'center' },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   contentText: { fontSize: 15, lineHeight: 24, marginTop: 4 },
+  photo: { width: '100%', height: 280, borderRadius: 10, marginTop: 8, marginBottom: 4 },
   placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
   deleteLink: { alignItems: 'center', padding: 16, marginTop: 8 },
   overlay: {

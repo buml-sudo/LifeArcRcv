@@ -60,8 +60,8 @@
   "capsule_content_label": "OBSAH KAPSLE",
   "capsule_unlocked_on": "Odemčeno",
   "capsule_no_text": "(Kapsle neobsahuje textový obsah)",
-  "capsule_photo_hint": "foto — zobraz v LifeArc",
-  "capsule_audio_hint": "Audio — přehraj v LifeArc",
+  "capsule_photo_hint": "foto",
+  "capsule_audio_hint": "Audio (přehrávání není v Receiveru podporováno)",
   "capsule_not_found": "Kapsle nenalezena.",
   "capsule_no_encrypted": "Kapsle nemá zašifrovaný obsah",
 

@@ -60,8 +60,8 @@
   "capsule_content_label": "CAPSULE CONTENTS",
   "capsule_unlocked_on": "Unlocked",
   "capsule_no_text": "(Capsule contains no text content)",
-  "capsule_photo_hint": "photos — view in LifeArc",
-  "capsule_audio_hint": "Audio — play in LifeArc",
+  "capsule_photo_hint": "photos",
+  "capsule_audio_hint": "Audio (playback not supported in Receiver)",
   "capsule_not_found": "Capsule not found.",
   "capsule_no_encrypted": "Capsule has no encrypted content",
 
