@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, ScrollView, Alert,
@@ -9,7 +9,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { useSettingsStore } from '../store/settingsStore';
 import { useCapsuleStore } from '../store/capsuleStore';
 import { useTranslation } from '../i18n';
-import { isUnlockTimeReached, TimeCheckResult } from '../services/timecheck';
+import { isUnlockTimeReached } from '../services/timecheck';
 import { decrypt } from '../services/encryption';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -69,21 +69,18 @@ export default function CapsuleScreen() {
   const accent = dark ? '#a78bfa' : '#7c3aed';
   const locale = language === 'cs' ? 'cs-CZ' : 'en-GB';
 
-  const [timeCheck, setTimeCheck]       = useState<TimeCheckResult | null>(null);
-  const [checkLoading, setCheckLoading] = useState(true);
-  const [password, setPassword]         = useState('');
-  const [showPwd, setShowPwd]           = useState(false);
-  const [decrypting, setDecrypting]     = useState(false);
-  const [decryptError, setDecryptError] = useState('');
-  const [content, setContent]           = useState<CapsuleContent | null>(null);
+  // Rychlá lokální kontrola (bez sítě) — jen pro zobrazení stavu
+  const probablyUnlocked = rc ? new Date() >= new Date(rc.capsule.unlock_date) : false;
 
-  useEffect(() => {
-    if (!rc) return;
-    setCheckLoading(true);
-    isUnlockTimeReached(rc.capsule.unlock_date, rc.capsule.offline_tolerance)
-      .then((result) => setTimeCheck(result))
-      .finally(() => setCheckLoading(false));
-  }, [rc?.capsule.unlock_date]);
+  const [password, setPassword]     = useState('');
+  const [showPwd, setShowPwd]       = useState(false);
+  const [decrypting, setDecrypting] = useState(false);
+  const [decryptError, setDecryptError] = useState('');
+  const [content, setContent]       = useState<CapsuleContent | null>(null);
+  const decryptingRef               = useRef(false);
+
+  const bg      = dark ? '#0d0d14' : '#f2f4f8';
+  const surface = dark ? '#16162a' : '#fff';
 
   const handleDelete = () => {
     if (!rc) return;
@@ -103,14 +100,44 @@ export default function CapsuleScreen() {
   };
 
   const handleDecrypt = async () => {
-    if (!rc) return;
+    if (!rc?.capsule.encrypted_content || decryptingRef.current) return;
     if (!password.trim()) { setDecryptError(t('error_empty_password')); return; }
-    if (!rc.capsule.encrypted_content) {
-      setDecryptError(t('capsule_no_encrypted'));
-      return;
-    }
+
+    decryptingRef.current = true;
     setDecrypting(true);
     setDecryptError('');
+
+    // 1. Autoritativní time check (síť)
+    let result;
+    try {
+      result = await isUnlockTimeReached(
+        rc.capsule.unlock_date,
+        rc.capsule.offline_tolerance ?? null
+      );
+    } catch {
+      setDecrypting(false);
+      decryptingRef.current = false;
+      Alert.alert(t('error_unknown'), t('capsule_verifying'));
+      return;
+    }
+
+    if (!result.allowed) {
+      setDecrypting(false);
+      decryptingRef.current = false;
+      const unlockStr = formatDateTime(rc.capsule.unlock_date, locale);
+      if (result.blockedReason === 'clock_went_back') {
+        Alert.alert('⚠️', t('capsule_clock_back'));
+      } else if (result.blockedReason === 'no_verification') {
+        Alert.alert('🔒', `${t('capsule_no_verification')}\n\n${t('capsule_opens_at_colon')} ${unlockStr}`);
+      } else if (result.blockedReason === 'offline_expired') {
+        Alert.alert('🔒', `${t('capsule_offline_expired')}\n\n${t('capsule_opens_at_colon')} ${unlockStr}`);
+      } else {
+        Alert.alert('🔒', `${t('capsule_not_yet')}\n\n${t('capsule_opens_at_colon')} ${unlockStr}`);
+      }
+      return;
+    }
+
+    // 2. Dešifrování
     try {
       const bytes = base64ToUint8Array(rc.capsule.encrypted_content);
       const plaintext = await decrypt(bytes, password.trim());
@@ -119,13 +146,11 @@ export default function CapsuleScreen() {
       setDecryptError(t('capsule_wrong_password'));
     } finally {
       setDecrypting(false);
+      decryptingRef.current = false;
     }
   };
 
-  const bg      = dark ? '#0d0d14' : '#f2f4f8';
-  const surface = dark ? '#16162a' : '#fff';
-
-  // ── Kapsle nenalezena ────────────────────────────────────────────────────────
+  // ── Kapsle nenalezena ─────────────────────────────────────────────────────────
   if (!rc) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
@@ -195,7 +220,7 @@ export default function CapsuleScreen() {
     );
   }
 
-  // ── Hlavní view (time check + heslo) ─────────────────────────────────────────
+  // ── Hlavní view ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -204,130 +229,85 @@ export default function CapsuleScreen() {
 
       <ScrollView contentContainerStyle={styles.pad}>
         {/* Hlavička kapsle */}
-        <View style={[styles.card, { backgroundColor: surface, borderLeftColor: accent }]}>
+        <View style={[styles.card, { backgroundColor: surface, borderLeftColor: probablyUnlocked ? '#4ade80' : accent }]}>
           <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>LIFEARC RCV</Text>
           <Text style={[styles.capsuleTitle, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
             {capsule.title}
           </Text>
           <Text style={{ color: dark ? '#888' : '#999', fontSize: 11 }}>
+            {probablyUnlocked
+              ? `🔓 ${t('capsule_time_arrived')}`
+              : `🔒 ${formatCountdown(capsule.unlock_date, language)}`
+            }
+          </Text>
+          <Text style={{ color: dark ? '#555' : '#bbb', fontSize: 10, marginTop: 2 }}>
             {t('capsule_opens_at_colon')} {formatDateTime(capsule.unlock_date, locale)}
           </Text>
         </View>
 
-        {/* Time check */}
-        {checkLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={accent} />
-            <Text style={[styles.statusText, { color: dark ? '#888' : '#999' }]}>
-              {t('capsule_verifying')}
-            </Text>
-          </View>
+        {/* Heslo + tlačítko */}
+        <View style={[styles.card, { backgroundColor: surface, borderLeftColor: accent }]}>
+          <Text style={[styles.statusText, { color: dark ? '#888' : '#999', marginBottom: 12 }]}>
+            {t('capsule_enter_pwd')}
+          </Text>
 
-        ) : timeCheck?.allowed ? (
-          // ── Odemčeno ──────────────────────────────────────────────────────────
-          <View style={[styles.card, { backgroundColor: surface }]}>
-            <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>🔓</Text>
-            <Text style={[styles.unlockTitle, { color: '#4ade80' }]}>
-              {t('capsule_time_arrived')}
-            </Text>
-            <Text style={[styles.statusText, { color: dark ? '#888' : '#999', textAlign: 'center', marginBottom: 20 }]}>
-              {t('capsule_enter_pwd')}
-            </Text>
-
-            <View style={styles.inputRow}>
-              <TextInput
-                style={[styles.input, {
-                  color: dark ? '#f0f0f0' : '#1a1a2e',
-                  borderColor: decryptError ? '#ff4a4a' : (dark ? '#2e2e4a' : '#dde2f0'),
-                  backgroundColor: dark ? '#0d0d14' : '#f2f4f8',
-                }]}
-                placeholder={t('capsule_pwd_placeholder')}
-                placeholderTextColor={dark ? '#555' : '#bbb'}
-                secureTextEntry={!showPwd}
-                value={password}
-                onChangeText={(v) => { setPassword(v); setDecryptError(''); }}
-                onSubmitEditing={handleDecrypt}
-                returnKeyType="go"
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
-                <Text style={{ fontSize: 20 }}>{showPwd ? '🙈' : '👁️'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {decryptError ? (
-              <Text style={styles.errorText}>{decryptError}</Text>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: accent, opacity: decrypting ? 0.7 : 1 }]}
-              onPress={handleDecrypt}
-              disabled={decrypting}
-            >
-              {decrypting ? (
-                <View style={styles.btnRow}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={[styles.btnText, { marginLeft: 8 }]}>
-                    {t('capsule_decrypting')}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={styles.btnText}>{t('capsule_open_btn')}</Text>
-              )}
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, {
+                color: dark ? '#f0f0f0' : '#1a1a2e',
+                borderColor: decryptError ? '#ff4a4a' : (dark ? '#2e2e4a' : '#dde2f0'),
+                backgroundColor: dark ? '#0d0d14' : '#f2f4f8',
+              }]}
+              placeholder={t('capsule_pwd_placeholder')}
+              placeholderTextColor={dark ? '#555' : '#bbb'}
+              secureTextEntry={!showPwd}
+              value={password}
+              onChangeText={(v) => { setPassword(v); setDecryptError(''); }}
+              onSubmitEditing={handleDecrypt}
+              returnKeyType="go"
+              editable={!decrypting}
+            />
+            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(v => !v)}>
+              <Text style={{ fontSize: 20 }}>{showPwd ? '🙈' : '👁️'}</Text>
             </TouchableOpacity>
           </View>
 
-        ) : (
-          // ── Zamčeno ────────────────────────────────────────────────────────────
-          <View style={[styles.card, { backgroundColor: surface, alignItems: 'center' }]}>
-            <Text style={{ fontSize: 48, marginBottom: 12 }}>🔒</Text>
+          {decryptError ? (
+            <Text style={styles.errorText}>{decryptError}</Text>
+          ) : null}
 
-            {timeCheck?.blockedReason === 'not_yet' && (
-              <>
-                <Text style={[styles.lockedLabel, { color: dark ? '#c0b0f0' : '#7c3aed' }]}>
-                  {t('capsule_not_yet')}
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: accent, opacity: decrypting ? 0.7 : 1 }]}
+            onPress={handleDecrypt}
+            disabled={decrypting}
+          >
+            {decrypting ? (
+              <View style={styles.btnRow}>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={[styles.btnText, { marginLeft: 8 }]}>
+                  {t('capsule_decrypting')}
                 </Text>
-                <Text style={[styles.lockedCountdown, { color: dark ? '#888' : '#999' }]}>
-                  {formatCountdown(capsule.unlock_date, language)}
-                </Text>
-                <Text style={[styles.lockedDate, { color: dark ? '#555' : '#bbb' }]}>
-                  {t('capsule_opens_at_colon')} {formatDateTime(capsule.unlock_date, locale)}
-                </Text>
-              </>
+              </View>
+            ) : (
+              <Text style={styles.btnText}>{t('capsule_open_btn')}</Text>
             )}
-
-            {timeCheck?.blockedReason === 'offline_expired' && (
-              <Text style={[styles.lockedLabel, { color: dark ? '#fbbf24' : '#d97706' }]}>
-                {t('capsule_offline_expired')}
-              </Text>
-            )}
-
-            {timeCheck?.blockedReason === 'no_verification' && (
-              <Text style={[styles.lockedLabel, { color: dark ? '#fbbf24' : '#d97706' }]}>
-                {t('capsule_no_verification')}
-              </Text>
-            )}
-
-            {timeCheck?.blockedReason === 'clock_went_back' && (
-              <Text style={[styles.lockedLabel, { color: '#ff4a4a' }]}>
-                {t('capsule_clock_back')}
-              </Text>
-            )}
-
-            {timeCheck?.offlineFallback && (
-              <Text style={[styles.offlineBadge, { color: dark ? '#888' : '#999' }]}>
-                {t('capsule_offline_drift').replace(
-                  '{h}',
-                  (timeCheck.offlineDriftHours ?? 0).toFixed(1)
-                )}
-              </Text>
-            )}
-          </View>
-        )}
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity style={styles.deleteLink} onPress={handleDelete}>
           <Text style={{ color: '#ff4a4a', fontSize: 13 }}>{t('capsule_delete_link')}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Busy overlay — POSLEDNÍ potomek, překryje vše */}
+      {decrypting && (
+        <View style={styles.overlay}>
+          <ActivityIndicator color={accent} size="large" />
+          <Text style={[styles.overlayText, { color: dark ? '#888' : '#999' }]}>
+            {t('capsule_decrypting')}
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -344,12 +324,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
   },
   capsuleTitle: { fontSize: 17, fontWeight: '600', marginBottom: 4 },
-  statusText: { fontSize: 13, marginTop: 8 },
-  unlockTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
-  lockedLabel: { fontSize: 15, fontWeight: '500', textAlign: 'center', lineHeight: 22, marginBottom: 12 },
-  lockedCountdown: { fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  lockedDate: { fontSize: 12, textAlign: 'center' },
-  offlineBadge: { fontSize: 11, marginTop: 12, textAlign: 'center' },
+  statusText: { fontSize: 13 },
   inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   input: {
     flex: 1, borderWidth: 1.5, borderRadius: 10,
@@ -366,4 +341,12 @@ const styles = StyleSheet.create({
   contentText: { fontSize: 15, lineHeight: 24, marginTop: 4 },
   placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
   deleteLink: { alignItems: 'center', padding: 16, marginTop: 8 },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  overlayText: { fontSize: 13, marginTop: 8 },
 });
