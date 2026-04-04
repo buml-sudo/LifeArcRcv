@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, ScrollView, Alert, Image,
+  ActivityIndicator, ScrollView, Alert, Image, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -46,6 +46,31 @@ function formatCountdown(unlockDateIso: string, language: string): string {
   if (days > 0)  return `Za ${days} dní ${hours} hodin`;
   if (hours > 0) return `Za ${hours} h ${mins} min`;
   return `Za ${mins} minut`;
+}
+
+function CapsulePhoto({ base64, dark }: { base64: string; dark: boolean }) {
+  const { width } = useWindowDimensions();
+  const imgWidth = width - 64; // padding karty
+  const [height, setHeight] = useState(imgWidth * 0.75); // fallback 4:3
+
+  useEffect(() => {
+    Image.getSize(
+      `data:image/jpeg;base64,${base64}`,
+      (w, h) => { if (w > 0) setHeight((imgWidth / w) * h); },
+      () => {}
+    );
+  }, [base64, imgWidth]);
+
+  return (
+    <Image
+      source={{ uri: `data:image/jpeg;base64,${base64}` }}
+      style={{
+        width: imgWidth, height, borderRadius: 10,
+        marginTop: 10, backgroundColor: dark ? '#1e1a30' : '#f0eeff',
+      }}
+      resizeMode="contain"
+    />
+  );
 }
 
 interface CapsuleContent {
@@ -200,12 +225,7 @@ export default function CapsuleScreen() {
             {content.photos && content.photos.length > 0 ? (
               <>
                 {content.photos.map((photo, i) => (
-                  <Image
-                    key={i}
-                    source={{ uri: `data:image/jpeg;base64,${photo}` }}
-                    style={[styles.photo, { backgroundColor: dark ? '#1e1a30' : '#f0eeff' }]}
-                    resizeMode="contain"
-                  />
+                  <CapsulePhoto key={i} base64={photo} dark={dark} />
                 ))}
               </>
             ) : null}
@@ -350,8 +370,7 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', alignItems: 'center' },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   contentText: { fontSize: 15, lineHeight: 24, marginTop: 4 },
-  photo: { width: '100%', height: 280, borderRadius: 10, marginTop: 8, marginBottom: 4 },
-  placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
+placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
   deleteLink: { alignItems: 'center', padding: 16, marginTop: 8 },
   overlay: {
     ...StyleSheet.absoluteFillObject,
