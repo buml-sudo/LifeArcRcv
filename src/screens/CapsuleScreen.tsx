@@ -11,6 +11,7 @@ import { useCapsuleStore } from '../store/capsuleStore';
 import { useTranslation } from '../i18n';
 import { isUnlockTimeReached } from '../services/timecheck';
 import { decrypt } from '../services/encryption';
+import { notifyCapsuleOpened } from '../services/notifications';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type NavProp = StackNavigationProp<RootStackParamList, 'Capsule'>;
@@ -171,6 +172,7 @@ export default function CapsuleScreen() {
       const bytes = base64ToUint8Array(rc.capsule.encrypted_content);
       const plaintext = await decrypt(bytes, password.trim());
       setContent(JSON.parse(plaintext) as CapsuleContent);
+      notifyCapsuleOpened(capsule.title).catch(() => {});
     } catch {
       setDecryptError(t('capsule_wrong_password'));
     } finally {

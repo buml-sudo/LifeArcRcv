@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import AppNavigator, { navigationRef, extractFileName } from './src/navigation/AppNavigator';
 import { useSettingsStore } from './src/store/settingsStore';
 import { useCapsuleStore } from './src/store/capsuleStore';
+import { requestNotificationPermission } from './src/services/notifications';
 
 export default function App() {
   const loadSettings = useSettingsStore((s) => s.loadPersistedSettings);
@@ -15,6 +16,7 @@ export default function App() {
     async function init() {
       loadSettings();
       loadCapsules();
+      requestNotificationPermission().catch(() => {});
       const url = await Linking.getInitialURL();
       if (url) setInitialArcUri(url);
       setInitialized(true);
