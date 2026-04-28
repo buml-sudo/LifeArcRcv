@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, ScrollView, Alert, Image, useWindowDimensions,
+  ActivityIndicator, ScrollView, Alert, Image, Modal, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -51,8 +51,8 @@ function formatCountdown(unlockDateIso: string, language: string): string {
 
 function CapsulePhoto({ base64, dark }: { base64: string; dark: boolean }) {
   const { width } = useWindowDimensions();
-  const imgWidth = width - 64; // padding karty
-  const [height, setHeight] = useState(imgWidth * 0.75); // fallback 4:3
+  const imgWidth = width - 80;
+  const [height, setHeight] = useState(imgWidth * 0.75);
 
   useEffect(() => {
     Image.getSize(
@@ -95,18 +95,24 @@ export default function CapsuleScreen() {
   const accent = dark ? '#a78bfa' : '#7c3aed';
   const locale = language === 'cs' ? 'cs-CZ' : 'en-GB';
 
-  // Rychlá lokální kontrola (bez sítě) — jen pro zobrazení stavu
   const probablyUnlocked = rc ? new Date() >= new Date(rc.capsule.unlock_date) : false;
 
-  const [password, setPassword]     = useState('');
-  const [showPwd, setShowPwd]       = useState(false);
-  const [decrypting, setDecrypting] = useState(false);
+  const [password, setPassword]         = useState('');
+  const [showPwd, setShowPwd]           = useState(false);
+  const [decrypting, setDecrypting]     = useState(false);
   const [decryptError, setDecryptError] = useState('');
-  const [content, setContent]       = useState<CapsuleContent | null>(null);
-  const decryptingRef               = useRef(false);
+  const [content, setContent]           = useState<CapsuleContent | null>(null);
+  const [showModal, setShowModal]       = useState(false);
+  const decryptingRef                   = useRef(false);
 
   const bg      = dark ? '#0d0d14' : '#f2f4f8';
   const surface = dark ? '#16162a' : '#fff';
+
+  const closeModal = () => {
+    setShowModal(false);
+    setContent(null);
+    setPassword('');
+  };
 
   const handleDelete = () => {
     if (!rc) return;
@@ -172,7 +178,8 @@ export default function CapsuleScreen() {
       const bytes = base64ToUint8Array(rc.capsule.encrypted_content);
       const plaintext = await decrypt(bytes, password.trim());
       setContent(JSON.parse(plaintext) as CapsuleContent);
-      notifyCapsuleOpened(capsule.title).catch(() => {});
+      setShowModal(true);
+      notifyCapsuleOpened(rc.capsule.title).catch(() => {});
     } catch {
       setDecryptError(t('capsule_wrong_password'));
     } finally {
@@ -199,61 +206,6 @@ export default function CapsuleScreen() {
 
   const capsule = rc.capsule;
 
-  // ── Obsah dešifrován ─────────────────────────────────────────────────────────
-  if (content) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={{ color: accent, fontSize: 15 }}>{t('btn_back')}</Text>
-        </TouchableOpacity>
-        <ScrollView contentContainerStyle={styles.pad}>
-          <View style={[styles.card, { backgroundColor: surface, borderLeftColor: '#4ade80' }]}>
-            <Text style={[styles.label, { color: dark ? '#888' : '#999' }]}>
-              {t('capsule_content_label')}
-            </Text>
-            <Text style={[styles.capsuleTitle, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
-              {capsule.title}
-            </Text>
-            <Text style={{ color: '#4ade80', fontSize: 11, marginBottom: 16 }}>
-              {t('capsule_unlocked_on')} {formatDateTime(capsule.unlock_date, locale)}
-            </Text>
-
-            {content.text ? (
-              <Text style={[styles.contentText, { color: dark ? '#d0d0e8' : '#2a2a3a' }]}>
-                {content.text}
-              </Text>
-            ) : null}
-
-            {content.photos && content.photos.length > 0 ? (
-              <>
-                {content.photos.map((photo, i) => (
-                  <CapsulePhoto key={i} base64={photo} dark={dark} />
-                ))}
-              </>
-            ) : null}
-
-            {content.audio ? (
-              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
-                🎵 {t('capsule_audio_hint')}
-              </Text>
-            ) : null}
-
-            {!content.text && !content.photos?.length && !content.audio ? (
-              <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
-                {t('capsule_no_text')}
-              </Text>
-            ) : null}
-          </View>
-
-          <TouchableOpacity style={styles.deleteLink} onPress={handleDelete}>
-            <Text style={{ color: '#ff4a4a', fontSize: 13 }}>{t('capsule_delete_link')}</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Hlavní view ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -332,6 +284,63 @@ export default function CapsuleScreen() {
         </TouchableOpacity>
       </ScrollView>
 
+      {/* ── Content modal ── */}
+      <Modal
+        visible={showModal}
+        transparent
+        animationType="slide"
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, {
+            backgroundColor: surface,
+            borderColor: dark ? '#2e2e4a' : '#dde2f0',
+          }]}>
+            <Text style={[styles.modalTitle, { color: dark ? '#f0f0f0' : '#1a1a2e' }]}>
+              🔓 {capsule.title}
+            </Text>
+            <Text style={{ color: '#4ade80', fontSize: 11, marginBottom: 16 }}>
+              {t('capsule_unlocked_on')} {formatDateTime(capsule.unlock_date, locale)}
+            </Text>
+
+            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+              {content?.text ? (
+                <Text style={[styles.contentText, { color: dark ? '#d0d0e8' : '#2a2a3a' }]}>
+                  {content.text}
+                </Text>
+              ) : null}
+
+              {content?.photos && content.photos.length > 0 ? (
+                <>
+                  {content.photos.map((photo, i) => (
+                    <CapsulePhoto key={i} base64={photo} dark={dark} />
+                  ))}
+                </>
+              ) : null}
+
+              {content?.audio ? (
+                <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
+                  🎵 {t('capsule_audio_hint')}
+                </Text>
+              ) : null}
+
+              {!content?.text && !content?.photos?.length && !content?.audio ? (
+                <Text style={[styles.placeholder, { color: dark ? '#888' : '#999' }]}>
+                  {t('capsule_no_text')}
+                </Text>
+              ) : null}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: accent, marginTop: 20 }]}
+              onPress={closeModal}
+            >
+              <Text style={styles.btnText}>{t('button_close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Busy overlay — POSLEDNÍ potomek, překryje vše */}
       {decrypting && (
         <View style={styles.overlay}>
@@ -372,8 +381,22 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', alignItems: 'center' },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   contentText: { fontSize: 15, lineHeight: 24, marginTop: 4 },
-placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
+  placeholder: { fontSize: 13, marginTop: 12, fontStyle: 'italic' },
   deleteLink: { alignItems: 'center', padding: 16, marginTop: 8 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
