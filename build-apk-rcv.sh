@@ -36,29 +36,35 @@ VERSION=$(python3 -c "import json; print(json.load(open('app.json'))['expo']['ve
 APK_NAME="LifeArcRcv-${VERSION}.apk"
 echo "  Verze: ${VERSION}"
 
-# 1. Expo prebuild (synchronizuje android/ s app.json)
+# 1. npm install (zajistí aktuální závislosti po git pull)
 echo ""
-echo "[1/4] Expo prebuild..."
+echo "[1/5] npm install..."
+npm install --legacy-peer-deps
+echo "✓ Závislosti aktuální"
+
+# 2. Expo prebuild (synchronizuje android/ s app.json)
+echo ""
+echo "[2/5] Expo prebuild..."
 npx expo prebuild --platform android --clean --no-install
 echo "✓ android/ aktualizován"
 
-# 2. Build
+# 3. Build
 echo ""
-echo "[2/4] Builduju APK..."
+echo "[3/5] Builduju APK..."
 cd android && ./gradlew assembleRelease --quiet && cd ..
 echo "✓ APK sestaven: $APK_SRC"
 
-# 3. Deploy na VPS
+# 4. Deploy na VPS
 echo ""
-echo "[3/4] Nahrávám na VPS..."
+echo "[4/5] Nahrávám na VPS..."
 ssh ${VPS_SSH} "mkdir -p ${VPS_BETA}"
 scp "${APK_SRC}" "${VPS_SSH}:${VPS_BETA}/${APK_NAME}"
 ssh ${VPS_SSH} "cp ${VPS_BETA}/${APK_NAME} ${VPS_BETA}/LifeArcRcv-latest.apk"
 echo "✓ Nahráno: https://${VPS_HOST}/beta/${APK_NAME}"
 
-# 4. Aktualizuj versions-rcv.json (VPS + lokálně)
+# 5. Aktualizuj versions-rcv.json (VPS + lokálně)
 echo ""
-echo "[4/4] Aktualizuji versions-rcv.json..."
+echo "[5/5] Aktualizuji versions-rcv.json..."
 TODAY=$(date +%Y-%m-%d)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 URL="https://${VPS_HOST}/beta/${APK_NAME}"
